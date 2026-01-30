@@ -138,9 +138,26 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, allowedChat
 }
 
 func formatProcessList(jsonStr string) string {
-	var processes []Process
+	start := strings.Index(jsonStr, "[")
+	if start == -1 {
+		return fmt.Sprintf("❌ Error: Valid JSON not found in PM2 output.\nRaw Output start: %.50s...", jsonStr)
+	}
+	jsonStr = jsonStr[start:]
+	type RobustProcess struct {
+		Name  string `json:"name"`
+		PMID  int    `json:"pm_id"`
+		Monit struct {
+			Memory int         `json:"memory"`
+			CPU    interface{} `json:"cpu"`
+		} `json:"monit"`
+		PM2Env struct {
+			Status string `json:"status"`
+		} `json:"pm2_env"`
+	}
+
+	var processes []RobustProcess
 	if err := json.Unmarshal([]byte(jsonStr), &processes); err != nil {
-		return "❌ Error parsing process list"
+		return fmt.Sprintf("❌ Error parsing JSON: %v", err)
 	}
 
 	if len(processes) == 0 {
@@ -160,9 +177,21 @@ func formatProcessList(jsonStr string) string {
 
 		memMB := p.Monit.Memory / 1024 / 1024
 
+		var cpuVal float64
+		switch v := p.Monit.CPU.(type) {
+		case float64:
+			cpuVal = v
+		case int:
+			cpuVal = float64(v)
+		case string:
+			fmt.Sscan(v, &cpuVal)
+		default:
+			cpuVal = 0.0
+		}
+
 		sb.WriteString(fmt.Sprintf("%s **%s** (ID: %d)\n", statusIcon, p.Name, p.PMID))
 		sb.WriteString(fmt.Sprintf("└ `%s` | 💾 %dMB | 💻 %.1f%%\n\n",
-			p.PM2Env.Status, memMB, p.Monit.CPU))
+			p.PM2Env.Status, memMB, cpuVal))
 	}
 
 	return sb.String()
