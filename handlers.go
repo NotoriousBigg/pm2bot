@@ -139,10 +139,14 @@ func handleCallback(bot *tgbotapi.BotAPI, q *tgbotapi.CallbackQuery, allowedChat
 
 func formatProcessList(jsonStr string) string {
 	start := strings.Index(jsonStr, "[")
-	if start == -1 {
-		return fmt.Sprintf("❌ Error: Valid JSON not found in PM2 output.\nRaw Output start: %.50s...", jsonStr)
+	end := strings.LastIndex(jsonStr, "]")
+
+	if start == -1 || end == -1 || start >= end {
+		log.Printf("❌ JSON Parse Failed. Raw PM2 Output:\n%s", jsonStr)
+		return "❌ Error: Could not find valid JSON in PM2 output."
 	}
-	jsonStr = jsonStr[start:]
+
+	jsonStr = jsonStr[start : end+1]
 	type RobustProcess struct {
 		Name  string `json:"name"`
 		PMID  int    `json:"pm_id"`
@@ -157,6 +161,7 @@ func formatProcessList(jsonStr string) string {
 
 	var processes []RobustProcess
 	if err := json.Unmarshal([]byte(jsonStr), &processes); err != nil {
+		log.Printf("❌ JSON Unmarshal Error: %v", err)
 		return fmt.Sprintf("❌ Error parsing JSON: %v", err)
 	}
 
@@ -173,6 +178,8 @@ func formatProcessList(jsonStr string) string {
 			statusIcon = "🟢"
 		} else if p.PM2Env.Status == "errored" {
 			statusIcon = "🔴"
+		} else if p.PM2Env.Status == "stopped" {
+			statusIcon = "⚫"
 		}
 
 		memMB := p.Monit.Memory / 1024 / 1024
